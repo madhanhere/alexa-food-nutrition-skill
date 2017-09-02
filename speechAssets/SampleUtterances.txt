@@ -1,0 +1,43 @@
+GetNutritionCaloriesInfo how many calories are in {FoodItem}
+GetNutritionCaloriesInfo {FoodItem}
+GetNutritionCaloriesInfo {FoodItem} calories
+GetNutritionCaloriesInfo {FoodItem} nutrition information
+GetNutritionCaloriesInfo get calorie information of {FoodItem}
+GetNutritionCaloriesInfo get nutrition information of {FoodItem}
+GetNutritionCaloriesInfo get me calorie information of {FoodItem}
+GetNutritionCaloriesInfo give me calorie information of {FoodItem}
+GetNutritionCaloriesInfo tell me calorie information of {FoodItem}
+
+GetNutritionProteinInfo how many proteins are in {FoodItem}
+GetNutritionProteinInfo {FoodItem} proteins
+GetNutritionProteinInfo get proteins information of {FoodItem}
+GetNutritionProteinInfo get me proteins information of {FoodItem}
+GetNutritionProteinInfo give me proteins information of {FoodItem}
+GetNutritionProteinInfo tell me proteins information of {FoodItem}
+
+GetNutritionFatInfo how many fats are in {FoodItem}
+GetNutritionFatInfo {FoodItem} fats
+GetNutritionFatInfo get fats information of {FoodItem}
+GetNutritionFatInfo get me fats information of {FoodItem}
+GetNutritionFatInfo give me fats information of {FoodItem}
+GetNutritionFatInfo tell me fats information of {FoodItem}
+
+GetNextEventIntent more information
+GetNextEventIntent more
+
+
+
+GetQuizIntent start a quiz
+GetQuizIntent start new quiz
+GetQuizIntent give me a quiz
+
+QuizAnswerIntent {Answer}
+
+DontKnowIntent i don't know
+DontKnowIntent don't know
+DontKnowIntent skip
+DontKnowIntent i don't know that
+DontKnowIntent who knows
+DontKnowIntent i don't know this question
+DontKnowIntent i don't know that one
+DontKnowIntent dunno

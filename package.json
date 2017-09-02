@@ -1,0 +1,19 @@
+{
+  "name": "food_nutrition_skill",
+  "version": "1.0.0",
+  "description": "food nutrition look up skill",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "."
+  },
+  "author": "madhan kumar",
+  "license": "ISC",
+  "dependencies": {
+    "chai": "^4.1.1",
+    "winston": "^2.3.1"
+  }
+}
