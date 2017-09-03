@@ -16,6 +16,9 @@ if(process.env.NODE_DEBUG_EN) {
   logger.level = 'debug';
 }
 
+const CALORIES = 1;
+const PROTIEN = 2;
+const FAT = 3;
 
 exports.handler = function (event, context) {
     try {
@@ -41,8 +44,16 @@ exports.handler = function (event, context) {
             onLaunch(event.request, event.session, new Response(context,event.session));
         } else if (event.request.type === 'IntentRequest') {
             var response =  new Response(context,event.session);
-            if (event.request.intent.name in intentHandlers) {
-              intentHandlers[event.request.intent.name](event.request, event.session, response,getSlots(event.request));
+            var intentName = event.request.intent.name;
+            if (intentName in intentHandlers) {
+                var eventRequest = getSlots(event.request);
+                var negativeRequest = [undefined, {}, null, ''];
+                var nutritionIntents = ['GetNutritionCaloriesInfo', 'GetNutritionProteinInfo', 'GetNutritionFatInfo'];
+                if (negativeRequest.indexOf(eventRequest) === -1) {
+                    intentHandlers[intentName](event.request, event.session, response, eventRequest);
+                } else if (nutritionIntents.indexOf(intentName) >= 0 && negativeRequest.indexOf(eventRequest) >= 0) {
+                    forgotFoodItem(response, nutritionIntents.indexOf(intentName) + 1, true);
+                } 
             } else {
               response.speechText = 'Unknown intent';
               response.shouldEndSession = true;
@@ -205,15 +216,15 @@ var MAX_RESPONSES = 3;
 var MAX_FOOD_ITEMS = 10;
 
 intentHandlers['GetNutritionCaloriesInfo'] = function(request, session, response, slots) {
-    getInfo(request, session, response, slots, 1);
+    getInfo(request, session, response, slots, CALORIES);
 };
 
 intentHandlers['GetNutritionProteinInfo'] = function(request, session, response, slots) {
-    getInfo(request, session, response, slots, 2);
+    getInfo(request, session, response, slots, PROTIEN);
 };
 
 intentHandlers['GetNutritionFatInfo'] = function(request, session, response, slots) {
-    getInfo(request, session, response, slots, 3);
+    getInfo(request, session, response, slots, FAT);
 }
 
 intentHandlers['GetNextEventIntent'] = function(request,session,response,slots) {
@@ -313,7 +324,7 @@ function searchFood(fDb, foodName) {
       }
     });
 
-    if(match==0) {
+    if(match === 0) {
       return;
     }
 
@@ -333,7 +344,7 @@ function searchFood(fDb, foodName) {
   });
 
   var finalResult = searchResult.filter(function(x){return x[1]>=10});
-  if(finalResult.length == 0) {
+  if(finalResult.length === 0) {
     finalResult = searchResult;
   } else {
     finalResult.sort(function(a, b) {
@@ -355,14 +366,14 @@ function searchFood(fDb, foodName) {
  * @param infoType 1 - calories, 2 - protein, 3 - Fat
  */
 function getInfo(request, session, response, slots, infoType) {
-    if(slots.FoodItem.length > 0) {
+    if(slots.FoodItem && slots.FoodItem.length > 0) {
         var foodDb = require('./food_db.json');
         var results = searchFood(foodDb,slots.FoodItem);
       
         response.cardTitle = `Nutrition Details results for: ${slots.FoodItem}`;
         response.cardContent = '';
         
-        if(results.length==0) {
+        if(results.length === 0) {
           response.speechText = `Could not find any food item for ${slots.FoodItem}. Please try different food item. `;
           response.cardContent += response.speechText;
           response.shouldEndSession = true;
@@ -370,15 +381,15 @@ function getInfo(request, session, response, slots, infoType) {
         } else {
             results.slice(0,MAX_RESPONSES).forEach( function(item) {
                 switch(infoType) {
-                    case 1:
+                    case CALORIES:
                     response.speechText  += `100 grams of ${item[0]} contains ${item[1]} calories. `; 
                     response.cardContent += `100 grams of ${item[0]} contains ${item[1]} calories.\n`;
                     break;
-                    case 2:
+                    case PROTIEN:
                     response.speechText  += `100 grams of ${item[0]} contains ${item[2]} proteins. `; 
                     response.cardContent += `100 grams of ${item[0]} contains ${item[2]} proteins.\n`;
                     break;
-                    case 3:
+                    case FAT:
                     response.speechText  += `100 grams of ${item[0]} contains ${item[3]} fat. `; 
                     response.cardContent += `100 grams of ${item[0]} contains ${item[3]} fat.\n`;
                     break;
@@ -405,11 +416,33 @@ function getInfo(request, session, response, slots, infoType) {
             }
         }
     } else {
-        response.speechText = 'Looks like you forgot to mention food name. Which food calorie information you would like to know? ';
-        response.repromptText = 'For example, you can say, how many calories are in butter salted. ';
-        response.shouldEndSession = false;
-        response.done();
-        return;
+        forgotFoodItem(response, infoType, false);
     }
      
+}
+
+function forgotFoodItem(response, infoType, termianteSession) {
+    response.speechText = '';
+    response.repromptText = '';
+    response.shouldEndSession = termianteSession;
+    switch(infoType) {
+        case CALORIES:
+        response.speechText = 'Looks like you forgot to mention food name. Which food calorie information you would like to know? ';
+        response.repromptText = 'For example, you can say, how many calories are in butter salted. ';
+        break;
+        case PROTIEN:
+        response.speechText = 'Looks like you forgot to mention food name. Which food protein information you would like to know? ';
+        response.repromptText = 'For example, you can say, how many proteins are in butter salted. ';
+        break;
+        case FAT:
+        response.speechText = 'Looks like you forgot to mention food name. Which food fat information you would like to know? ';
+        response.repromptText = 'For example, you can say, how many fats are in butter salted. ';
+        break;
+        default:
+        response.speechText = 'Looks like you forgot to mention food name. Which food calorie information you would like to know? ';
+        response.repromptText = 'For example, you can say, how many calories are in butter salted. ';
+        break;
+    }
+    response.done();
+    return;
 }
