@@ -4,21 +4,24 @@
 
 var winston = require('winston');
 
-var logger = new (winston.Logger)({
+
+var logger = new(winston.Logger)({
     transports: [
-      new (winston.transports.Console)({ prettyPrint: true, timestamp: true, json: false, stderrLevels:['error']})
+        new(winston.transports.Console)({
+            prettyPrint: true,
+            timestamp: true,
+            json: false,
+            stderrLevels: ['error']
+        })
     ]
-  });
+});
 
 var intentHandlers = {};
 
-if(process.env.NODE_DEBUG_EN) {
-  logger.level = 'debug';
+if (process.env.NODE_DEBUG_EN) {
+    logger.level = 'debug';
 }
 
-const CALORIES = 1;
-const PROTIEN = 2;
-const FAT = 3;
 
 exports.handler = function (event, context) {
     try {
@@ -27,37 +30,33 @@ exports.handler = function (event, context) {
 
         if (APP_ID !== '' && event.session.application.applicationId !== APP_ID) {
             context.fail('Invalid Application ID');
-         }
-      
+        }
+
         if (!event.session.attributes) {
             event.session.attributes = {};
         }
 
-        logger.debug('Incoming request:\n', JSON.stringify(event,null,2));
+        logger.debug('Incoming request:\n', JSON.stringify(event, null, 2));
 
         if (event.session.new) {
-            onSessionStarted({requestId: event.request.requestId}, event.session);
+            onSessionStarted({
+                requestId: event.request.requestId
+            }, event.session);
         }
 
-
         if (event.request.type === 'LaunchRequest') {
-            onLaunch(event.request, event.session, new Response(context,event.session));
+            onLaunch(event.request, event.session, new Response(context, event.session));
+            logger.info('lanuch request');
         } else if (event.request.type === 'IntentRequest') {
-            var response =  new Response(context,event.session);
-            var intentName = event.request.intent.name;
-            if (intentName in intentHandlers) {
-                var eventRequest = getSlots(event.request);
-                var negativeRequest = [undefined, {}, null, ''];
-                var nutritionIntents = ['GetNutritionCaloriesInfo', 'GetNutritionProteinInfo', 'GetNutritionFatInfo'];
-                if (negativeRequest.indexOf(eventRequest) === -1) {
-                    intentHandlers[intentName](event.request, event.session, response, eventRequest);
-                } else if (nutritionIntents.indexOf(intentName) >= 0 && negativeRequest.indexOf(eventRequest) >= 0) {
-                    forgotFoodItem(response, nutritionIntents.indexOf(intentName) + 1, true);
-                } 
+            var response = new Response(context, event.session);
+            if (event.request.intent.name in intentHandlers) {
+                intentHandlers[event.request.intent.name](event.request, event.session, response, getSlots(event.request));
+                logger.info('handle found');
             } else {
-              response.speechText = 'Unknown intent';
-              response.shouldEndSession = true;
-              response.done();
+                response.speechText = 'Sorry, I could not understand that one';
+                response.shouldEndSession = true;
+                response.done();
+                console.log('handle not found');
             }
         } else if (event.request.type === 'SessionEndedRequest') {
             onSessionEnded(event.request, event.session);
@@ -69,380 +68,441 @@ exports.handler = function (event, context) {
 };
 
 function getSlots(req) {
-  var slots = {}
-  for(var key in req.intent.slots) {
-    if(req.intent.slots[key].value !== undefined) {
-      slots[key] = req.intent.slots[key].value;
+    var slots = {}
+    for (var key in req.intent.slots) {
+        if (req.intent.slots[key].value !== undefined) {
+            slots[key] = req.intent.slots[key].value;
+        }
     }
-  }
-  return slots;
+    return slots;
 }
 
-var Response = function (context,session) {
-  this.speechText = '';
-  this.shouldEndSession = true;
-  this.ssmlEn = true;
-  this._context = context;
-  this._session = session;
+var Response = function (context, session) {
+    this.speechText = '';
+    this.shouldEndSession = true;
+    this.ssmlEn = true;
+    this._context = context;
+    this._session = session;
 
-  this.done = function(options) {
+    this.done = function (options) {
 
-    if(options && options.speechText) {
-      this.speechText = options.speechText;
+        if (options && options.speechText) {
+            this.speechText = options.speechText;
+        }
+
+        if (options && options.repromptText) {
+            this.repromptText = options.repromptText;
+        }
+
+        if (options && options.ssmlEn) {
+            this.ssmlEn = options.ssmlEn;
+        }
+
+        if (options && options.shouldEndSession) {
+            this.shouldEndSession = options.shouldEndSession;
+        }
+
+        this._context.succeed(buildAlexaResponse(this));
     }
 
-    if(options && options.repromptText) {
-      this.repromptText = options.repromptText;
+    this.fail = function (msg) {
+        logger.error(msg);
+        this._context.fail(msg);
     }
-
-    if(options && options.ssmlEn) {
-      this.ssmlEn = options.ssmlEn;
-    }
-
-    if(options && options.shouldEndSession) {
-      this.shouldEndSession = options.shouldEndSession;
-    }
-
-    this._context.succeed(buildAlexaResponse(this));
-  }
-
-  this.fail = function(msg) {
-    logger.error(msg);
-    this._context.fail(msg);
-  }
 
 };
 
-function createSpeechObject(text,ssmlEn) {
-  if(ssmlEn) {
-    return {
-      type: 'SSML',
-      ssml: '<speak>'+text+'</speak>'
+function createSpeechObject(text, ssmlEn) {
+    if (ssmlEn) {
+        return {
+            type: 'SSML',
+            ssml: '<speak>' + text + '</speak>'
+        }
+    } else {
+        return {
+            type: 'PlainText',
+            text: text
+        }
     }
-  } else {
-    return {
-      type: 'PlainText',
-      text: text
-    }
-  }
 }
 
 function buildAlexaResponse(response) {
-  var alexaResponse = {
-    version: '1.0',
-    response: {
-      outputSpeech: createSpeechObject(response.speechText,response.ssmlEn),
-      shouldEndSession: response.shouldEndSession
-    }
-  };
-
-  if(response.repromptText) {
-    alexaResponse.response.reprompt = {
-      outputSpeech: createSpeechObject(response.repromptText,response.ssmlEn)
-    };
-  }
-
-  if(response.cardTitle) {
-    alexaResponse.response.card = {
-      type: 'Simple',
-      title: response.cardTitle
+    var alexaResponse = {
+        version: '1.0',
+        response: {
+            outputSpeech: createSpeechObject(response.speechText, response.ssmlEn),
+            shouldEndSession: response.shouldEndSession
+        }
     };
 
-    if(response.imageUrl) {
-      alexaResponse.response.card.type = 'Standard';
-      alexaResponse.response.card.text = response.cardContent;
-      alexaResponse.response.card.image = {
-        smallImageUrl: response.imageUrl,
-        largeImageUrl: response.imageUrl
-      };
-    } else {
-      alexaResponse.response.card.content = response.cardContent;
+    if (response.repromptText) {
+        alexaResponse.response.reprompt = {
+            outputSpeech: createSpeechObject(response.repromptText, response.ssmlEn)
+        };
     }
-  }
 
-  if (!response.shouldEndSession && response._session && response._session.attributes) {
-    alexaResponse.sessionAttributes = response._session.attributes;
-  }
-  logger.debug('Final response:\n', JSON.stringify(alexaResponse,null,2));
-  return alexaResponse;
+    if (response.cardTitle) {
+        alexaResponse.response.card = {
+            type: 'Simple',
+            title: response.cardTitle
+        };
+
+        if (response.imageUrl) {
+            alexaResponse.response.card.type = 'Standard';
+            alexaResponse.response.card.text = response.cardContent;
+            alexaResponse.response.card.image = {
+                smallImageUrl: response.imageUrl,
+                largeImageUrl: response.imageUrl
+            };
+        } else {
+            alexaResponse.response.card.content = response.cardContent;
+        }
+    }
+
+    if (!response.shouldEndSession && response._session && response._session.attributes) {
+        alexaResponse.sessionAttributes = response._session.attributes;
+    }
+    logger.debug('Final response:\n', JSON.stringify(alexaResponse, null, 2));
+    return alexaResponse;
 }
 
 function getError(err) {
-  var msg='';
-  if (typeof err === 'object') {
-    if (err.message) {
-      msg = ': Message : ' + err.message;
+    var msg = '';
+    if (typeof err === 'object') {
+        if (err.message) {
+            msg = ': Message : ' + err.message;
+        }
+        if (err.stack) {
+            msg += '\nStacktrace:';
+            msg += '\n====================\n';
+            msg += err.stack;
+        }
+    } else {
+        msg = err;
+        msg += ' - This error is not object';
     }
-    if (err.stack) {
-      msg += '\nStacktrace:';
-      msg += '\n====================\n';
-      msg += err.stack;
-    }
-  } else {
-    msg = err;
-    msg += ' - This error is not object';
-  }
-  return msg;
+    return msg;
 }
 
 
 //--------------------------------------------- Skill specific logic starts here ----------------------------------------- 
 
 //Add your skill application ID from amazon devloper portal
-var APP_ID = 'YOUR_ALEXA_APPLICATION_ID';
+var APP_ID = 'amzn1.ask.skill.f7d863be-2ee9-4c79-8977-6f20538cd8ff';
 
 function onSessionStarted(sessionStartedRequest, session) {
     logger.debug('onSessionStarted requestId=' + sessionStartedRequest.requestId + ', sessionId=' + session.sessionId);
     // add any session init logic here
-    
+
 }
 
 function onSessionEnded(sessionEndedRequest, session) {
-  logger.debug('onSessionEnded requestId=' + sessionEndedRequest.requestId + ', sessionId=' + session.sessionId);
-  // Add any cleanup logic here
-  
+    logger.debug('onSessionEnded requestId=' + sessionEndedRequest.requestId + ', sessionId=' + session.sessionId);
+    // Add any cleanup logic here
+
 }
 
 function onLaunch(launchRequest, session, response) {
-  logger.debug('onLaunch requestId=' + launchRequest.requestId + ', sessionId=' + session.sessionId);
+    logger.debug('onLaunch requestId=' + launchRequest.requestId + ', sessionId=' + session.sessionId);
 
-  response.speechText = 'Hi, I am Food Nutrition Details skill. You can ask me about calorie information of food items. Which food would you like to check?';
-  response.repromptText = 'For example, you can say how many calories are in butter salted.';
-  response.shouldEndSession = false;
-  response.done();
+    response.speechText = 'Hi, I am Food Nutrition Details skill. You can ask me about calorie, protein and fat content information of food items. Which food would you like to check?';
+    response.repromptText = 'For example, you can say how many calories are in butter salted. or you can say how many proteins are in butter salted. or you can say how many fats are in butter salted';
+    response.shouldEndSession = false;
+    response.done();
 }
 
 var MAX_RESPONSES = 3;
 var MAX_FOOD_ITEMS = 10;
 
-intentHandlers['GetNutritionCaloriesInfo'] = function(request, session, response, slots) {
-    getInfo(request, session, response, slots, CALORIES);
-};
+intentHandlers['GetNutritionCaloriesInfo'] = function (request, session, response, slots) {
+    //Intent logic
+    //slots.FoodItem
 
-intentHandlers['GetNutritionProteinInfo'] = function(request, session, response, slots) {
-    getInfo(request, session, response, slots, PROTIEN);
-};
+    if (!slots.FoodItem || slots.FoodItem === undefined || Object.keys(slots).length === 0) {
+        response.speechText = 'Looks like you forgot to mention food name. Which food calorie information you would like to know? ';
+        response.repromptText = 'For example, you can say, how many calories are in butter salted. ';
+        response.shouldEndSession = false;
+        response.done();
+        return;
+    }
 
-intentHandlers['GetNutritionFatInfo'] = function(request, session, response, slots) {
-    getInfo(request, session, response, slots, FAT);
+    var foodDb = require('./food_db.json');
+    var results = searchFood(foodDb, slots.FoodItem);
+
+    response.cardTitle = `Nutrition Details results for: ${slots.FoodItem}`;
+    response.cardContent = '';
+
+    if (results.length == 0) {
+        response.speechText = `Could not find any food item for ${slots.FoodItem}. Please try different food item. `;
+        response.cardContent += response.speechText;
+        response.shouldEndSession = true;
+        response.done();
+    } else {
+        results.slice(0, MAX_RESPONSES).forEach(function (item) {
+            response.speechText += `100 grams of ${item[0]} contains ${item[1]} calories. `;
+            response.cardContent += `100 grams of '${item[0]}' contains '${item[1]}' Calories (kcal)\n`;
+        });
+
+
+        if (results.length > MAX_RESPONSES) {
+            response.speechText += `There are more foods matched your search. You can say more information for more information. Or say stop to stop the skill. `;
+            response.cardContent += `There are more foods matched your search. You can say more information for more information. Or say stop to stop the skill. `;
+            response.repromptText = `You can say more information or stop.`;
+            session.attributes.resultLength = results.length;
+            session.attributes.FoodItem = slots.FoodItem;
+            session.attributes.results = results.slice(MAX_RESPONSES, MAX_FOOD_ITEMS);
+            response.shouldEndSession = false;
+            response.done();
+
+        } else {
+            response.shouldEndSession = true;
+            response.done();
+        }
+
+
+    }
+
+
 }
 
-intentHandlers['GetNextEventIntent'] = function(request,session,response,slots) {
+intentHandlers['GetNutritionProteinInfo'] = function (request, session, response, slots) {
+    //Intent logic
+    //slots.FoodItem
 
-  if(session.attributes.results) {
-    response.cardTitle = `Nutrition Details more information for: ${session.attributes.FoodItem}`;
+    if (!slots.FoodItem || slots.FoodItem === undefined || Object.keys(slots).length === 0) {
+        response.speechText = 'Looks like you forgot to mention food name. Which food protein information you would like to know? ';
+        response.repromptText = 'For example, you can say, how many proteins are in butter salted. ';
+        response.shouldEndSession = false;
+        response.done();
+        return;
+    }
 
-    response.speechText  = `Your search resulted in ${session.attributes.resultLength} food items. Here are the few food items from search. Please add more keywords from this list for better results.`;
-    response.cardContent = `${response.speechText}\n`;
+    var foodDb = require('./food_db.json');
+    var results = searchFood(foodDb, slots.FoodItem);
+
+    response.cardTitle = `Nutrition Details results for: ${slots.FoodItem}`;
+    response.cardContent = '';
+
+    if (results.length == 0) {
+        response.speechText = `Could not find any food item for ${slots.FoodItem}. Please try different food item. `;
+        response.cardContent += response.speechText;
+        response.shouldEndSession = true;
+        response.done();
+    } else {
+        results.slice(0, MAX_RESPONSES).forEach(function (item) {
+            response.speechText += `100 grams of ${item[0]} contains ${item[2]} proteins. `;
+            response.cardContent += `100 grams of '${item[0]}' contains '${item[2]}' Proteins \n`;
+        });
 
 
-    session.attributes.results.forEach(function(item) {
-      response.speechText += `${item[0]}. `; 
-      response.cardContent += `'${item[0]}'\n`;
-    });
-  } else {
-    response.speechText  = `Wrong invocation of this intent. `;
-  }
-  response.shouldEndSession = true;
-  response.done();
+        if (results.length > MAX_RESPONSES) {
+            response.speechText += `There are more foods matched your search. You can say more information for more information. Or say stop to stop the skill. `;
+            response.cardContent += `There are more foods matched your search. You can say more information for more information. Or say stop to stop the skill. `;
+            response.repromptText = `You can say more information or stop.`;
+            session.attributes.resultLength = results.length;
+            session.attributes.FoodItem = slots.FoodItem;
+            session.attributes.results = results.slice(MAX_RESPONSES, MAX_FOOD_ITEMS);
+            response.shouldEndSession = false;
+            response.done();
+
+        } else {
+            response.shouldEndSession = true;
+            response.done();
+        }
+
+
+    }
+
+
+}
+
+intentHandlers['GetNutritionFatInfo'] = function (request, session, response, slots) {
+    //Intent logic
+    //slots.FoodItem
+
+    if (!slots.FoodItem || slots.FoodItem === undefined || Object.keys(slots).length === 0) {
+        response.speechText = 'Looks like you forgot to mention food name. Which food fats information you would like to know? ';
+        response.repromptText = 'For example, you can say, how many fats are in butter salted. ';
+        response.shouldEndSession = false;
+        response.done();
+        return;
+    }
+
+    var foodDb = require('./food_db.json');
+    var results = searchFood(foodDb, slots.FoodItem);
+
+    response.cardTitle = `Nutrition Details results for: ${slots.FoodItem}`;
+    response.cardContent = '';
+
+    if (results.length == 0) {
+        response.speechText = `Could not find any food item for ${slots.FoodItem}. Please try different food item. `;
+        response.cardContent += response.speechText;
+        response.shouldEndSession = true;
+        response.done();
+    } else {
+        results.slice(0, MAX_RESPONSES).forEach(function (item) {
+            response.speechText += `100 grams of ${item[0]} contains ${item[3]} fats. `;
+            response.cardContent += `100 grams of '${item[0]}' contains '${item[3]}' Fats \n`;
+        });
+
+
+        if (results.length > MAX_RESPONSES) {
+            response.speechText += `There are more foods matched your search. You can say more information for more information. Or say stop to stop the skill. `;
+            response.cardContent += `There are more foods matched your search. You can say more information for more information. Or say stop to stop the skill. `;
+            response.repromptText = `You can say more information or stop.`;
+            session.attributes.resultLength = results.length;
+            session.attributes.FoodItem = slots.FoodItem;
+            session.attributes.results = results.slice(MAX_RESPONSES, MAX_FOOD_ITEMS);
+            response.shouldEndSession = false;
+            response.done();
+
+        } else {
+            response.shouldEndSession = true;
+            response.done();
+        }
+
+
+    }
+
+
+}
+
+intentHandlers['GetNextEventIntent'] = function (request, session, response, slots) {
+
+    if (session.attributes.results) {
+        response.cardTitle = `Nutrition Details more information for: ${session.attributes.FoodItem}`;
+
+        response.speechText = `Your search resulted in ${session.attributes.resultLength} food items. Here are the few food items from search. Please add more keywords from this list for better results.`;
+        response.cardContent = `${response.speechText}\n`;
+
+
+        session.attributes.results.forEach(function (item) {
+            response.speechText += `${item[0]}. `;
+            response.cardContent += `'${item[0]}'\n`;
+        });
+    } else {
+        response.speechText = `Wrong invocation of this intent. `;
+    }
+    response.shouldEndSession = true;
+    response.done();
 
 };
 
-intentHandlers['AMAZON.StopIntent'] = function(request,session,response,slots) {
-  response.speechText  = `Good Bye. `;
-  response.shouldEndSession = true;
-  response.done();
+intentHandlers['AMAZON.StopIntent'] = function (request, session, response, slots) {
+    response.speechText = `Good Bye. `;
+    response.shouldEndSession = true;
+    response.done();
 };
 
-intentHandlers['AMAZON.CancelIntent'] =  intentHandlers['AMAZON.StopIntent'];
+intentHandlers['AMAZON.CancelIntent'] = intentHandlers['AMAZON.StopIntent'];
 
-intentHandlers['AMAZON.HelpIntent'] = function(request,session,response,slots) {
-  response.speechText = "You can ask Nutrition Details skill about calorie information of food items. For a given food item, it provides you Calories per 100 grams. For example, you can say butter salted, to know about its Calories per 100 grams. Alternatively, you can also say how many calories in butter salted. If skill not opened you can also say in one shot, Alexa, ask Nutrition Details about butter salted. Please refer to skill description for all possible sample utterences. Which food calorie information would you like to know?";
-  response.repromptText = "Which food calorie information would you like to know? or You can say stop to stop the skill.";
-  response.shouldEndSession = false;
-  response.done();
+intentHandlers['AMAZON.HelpIntent'] = function (request, session, response, slots) {
+    response.speechText = "You can ask Nutrition Details skill about calorie information of food items. For a given food item, it provides you Calories per 100 grams. For example, you can say butter salted, to know about its Calories per 100 grams. Alternatively, you can also say how many calories in butter salted. If skill not opened you can also say in one shot, Alexa, ask Nutrition Details about butter salted. Please refer to skill description for all possible sample utterences. Which food calorie information would you like to know?";
+    response.repromptText = "Which food calorie information would you like to know? or You can say stop to stop the skill.";
+    response.shouldEndSession = false;
+    response.done();
 }
 
-intentHandlers['GetQuizIntent'] = function(request,session,response,slots) {
-  var fruitsDb = require('./fruits_db.json');
-  var index = Math.floor(Math.random() * fruitsDb.length);
-  response.speechText  = `How many calories in ${fruitsDb[index][0]}. `;
-  response.repromptText  = `Please tell number of calories. `;
-  session.attributes.fruit = fruitsDb[index];
-  response.shouldEndSession = false;
-  response.done();
+intentHandlers['GetQuizIntent'] = function (request, session, response, slots) {
+    var fruitsDb = require('./fruits_db.json');
+    var index = Math.floor(Math.random() * fruitsDb.length);
+    response.speechText = `How many calories in ${fruitsDb[index][0]}. `;
+    response.repromptText = `Please tell number of calories. `;
+    session.attributes.fruit = fruitsDb[index];
+    response.shouldEndSession = false;
+    response.done();
 }
 
 
-intentHandlers['QuizAnswerIntent'] = function(request,session,response,slots) {
-  var fruitInfo = session.attributes.fruit;
-  var answer = Number(slots.Answer)
-  var calories = Number(fruitInfo[1])
+intentHandlers['QuizAnswerIntent'] = function (request, session, response, slots) {
+    var fruitInfo = session.attributes.fruit;
+    var answer = Number(slots.Answer)
+    var calories = Number(fruitInfo[1])
 
-  if (calories === answer) {
-    response.speechText  = `Correct answer. Congrats. `;
-  } else if( Math.abs(calories - answer) < 5 )  {
-    response.speechText  = `You are pretty close. ${fruitInfo[0]} contains ${fruitInfo[1]} calories. `;
-  } else {
-    response.speechText  = `Wrong answer. ${fruitInfo[0]} contains ${fruitInfo[1]} calories. `;
-  }
-  response.shouldEndSession = true;
-  response.done();
+    if (calories === answer) {
+        response.speechText = `Correct answer. Congrats. `;
+    } else if (Math.abs(calories - answer) < 5) {
+        response.speechText = `You are pretty close. ${fruitInfo[0]} contains ${fruitInfo[1]} calories. `;
+    } else {
+        response.speechText = `Wrong answer. ${fruitInfo[0]} contains ${fruitInfo[1]} calories. `;
+    }
+    response.shouldEndSession = true;
+    response.done();
 }
 
-intentHandlers['DontKnowIntent'] = function(request,session,response,slots) {
-  var fruitInfo = session.attributes.fruit;
-  var calories = Number(fruitInfo[1])
-
-  response.speechText  = `No problem. ${fruitInfo[0]} contains ${fruitInfo[1]} calories. `;
-  response.shouldEndSession = true;
-  response.done();
+intentHandlers['DontKnowIntent'] = function (request, session, response, slots) {
+    if(session.attributes.fruit) {
+        var fruitInfo = session.attributes.fruit;
+        var calories = Number(fruitInfo[1])
+    
+        response.speechText = `No problem. ${fruitInfo[0]} contains ${fruitInfo[1]} calories. `;
+        response.shouldEndSession = true;
+        response.done();
+    } else {
+        response.speechText = 'Sorry, I could not understand that one';
+        response.shouldEndSession = true;
+        response.done();
+    }
 }
 
 
 function searchFood(fDb, foodName) {
-  foodName = foodName.toLowerCase();
-  foodName = foodName.replace(/,/g, '');
-  var foodWords = foodName.split(/\s+/);
-  var regExps = []
-  var searchResult = []
+    foodName = foodName.toLowerCase();
+    foodName = foodName.replace(/,/g, '');
+    var foodWords = foodName.split(/\s+/);
+    var regExps = []
+    var searchResult = []
 
 
-  foodWords.forEach(function(sWord) {
-    regExps.push(new RegExp(`^${sWord}(es|s)?\\b`));
-    regExps.push(new RegExp(`^${sWord}`));
-  });
-
-  fDb.forEach( function (item) {
-    var match = 1;
-    var fullName = item[0]
-    var cmpWeight = 0;
-
-    foodWords.forEach(function(sWord) {
-      if(!fullName.match(sWord)) {
-        match = 0;
-      }
+    foodWords.forEach(function (sWord) {
+        regExps.push(new RegExp(`^${sWord}(es|s)?\\b`));
+        regExps.push(new RegExp(`^${sWord}`));
     });
 
-    if(match === 0) {
-      return;
-    }
+    fDb.forEach(function (item) {
+        var match = 1;
+        var fullName = item[0]
+        var cmpWeight = 0;
 
-    regExps.forEach(function(rExp) {
-      if(fullName.match(rExp)) {
-        cmpWeight += 10;
-      }
-    });
-
-    if (fullName.split(/\s+/).length == foodWords.length) {
-        cmpWeight += 10;
-    }
-
-
-    searchResult.push([item, cmpWeight]);
-
-  });
-
-  var finalResult = searchResult.filter(function(x){return x[1]>=10});
-  if(finalResult.length === 0) {
-    finalResult = searchResult;
-  } else {
-    finalResult.sort(function(a, b) {
-        return b[1] - a[1];
-    });
-  }
-
-  finalResult = finalResult.map(function(x) {
-    return x[0]
-  });
-
-  return finalResult;
-}
-/**
- * @param request - request object
- * @param session - session object
- * @param response - response object
- * @param slotes - contains FoodItem
- * @param infoType 1 - calories, 2 - protein, 3 - Fat
- */
-function getInfo(request, session, response, slots, infoType) {
-    if(slots.FoodItem && slots.FoodItem.length > 0) {
-        var foodDb = require('./food_db.json');
-        var results = searchFood(foodDb,slots.FoodItem);
-      
-        response.cardTitle = `Nutrition Details results for: ${slots.FoodItem}`;
-        response.cardContent = '';
-        
-        if(results.length === 0) {
-          response.speechText = `Could not find any food item for ${slots.FoodItem}. Please try different food item. `;
-          response.cardContent += response.speechText;
-          response.shouldEndSession = true;
-          response.done();
-        } else {
-            results.slice(0,MAX_RESPONSES).forEach( function(item) {
-                switch(infoType) {
-                    case CALORIES:
-                    response.speechText  += `100 grams of ${item[0]} contains ${item[1]} calories. `; 
-                    response.cardContent += `100 grams of ${item[0]} contains ${item[1]} calories.\n`;
-                    break;
-                    case PROTIEN:
-                    response.speechText  += `100 grams of ${item[0]} contains ${item[2]} proteins. `; 
-                    response.cardContent += `100 grams of ${item[0]} contains ${item[2]} proteins.\n`;
-                    break;
-                    case FAT:
-                    response.speechText  += `100 grams of ${item[0]} contains ${item[3]} fat. `; 
-                    response.cardContent += `100 grams of ${item[0]} contains ${item[3]} fat.\n`;
-                    break;
-                    default:
-                    response.speechText  += `100 grams of ${item[0]} contains ${item[1]} calories. `;
-                    response.cardContent += `100 grams of ${item[0]} contains ${item[1]} calories.\n`;
-                    break;
-                }
-            });
-      
-      
-            if(results.length > MAX_RESPONSES) {
-                response.speechText += `There are more foods matched your search. You can say more information for more information. Or say stop to stop the skill. `; 
-                response.cardContent += `There are more foods matched your search. You can say more information for more information. Or say stop to stop the skill. `; 
-                response.repromptText = `You can say more information or stop.`; 
-                session.attributes.resultLength = results.length;
-                session.attributes.FoodItem = slots.FoodItem;
-                session.attributes.results = results.slice(MAX_RESPONSES,MAX_FOOD_ITEMS);
-                response.shouldEndSession = false;
-                response.done();
-            } else {
-                response.shouldEndSession = true;
-                response.done();
+        foodWords.forEach(function (sWord) {
+            if (!fullName.match(sWord)) {
+                match = 0;
             }
-        }
-    } else {
-        forgotFoodItem(response, infoType, false);
-    }
-     
-}
+        });
 
-function forgotFoodItem(response, infoType, termianteSession) {
-    response.speechText = '';
-    response.repromptText = '';
-    response.shouldEndSession = termianteSession;
-    switch(infoType) {
-        case CALORIES:
-        response.speechText = 'Looks like you forgot to mention food name. Which food calorie information you would like to know? ';
-        response.repromptText = 'For example, you can say, how many calories are in butter salted. ';
-        break;
-        case PROTIEN:
-        response.speechText = 'Looks like you forgot to mention food name. Which food protein information you would like to know? ';
-        response.repromptText = 'For example, you can say, how many proteins are in butter salted. ';
-        break;
-        case FAT:
-        response.speechText = 'Looks like you forgot to mention food name. Which food fat information you would like to know? ';
-        response.repromptText = 'For example, you can say, how many fats are in butter salted. ';
-        break;
-        default:
-        response.speechText = 'Looks like you forgot to mention food name. Which food calorie information you would like to know? ';
-        response.repromptText = 'For example, you can say, how many calories are in butter salted. ';
-        break;
+        if (match == 0) {
+            return;
+        }
+
+        regExps.forEach(function (rExp) {
+            if (fullName.match(rExp)) {
+                cmpWeight += 10;
+            }
+        });
+
+        if (fullName.split(/\s+/).length == foodWords.length) {
+            cmpWeight += 10;
+        }
+
+
+        searchResult.push([item, cmpWeight]);
+
+    });
+
+    var finalResult = searchResult.filter(function (x) {
+        return x[1] >= 10
+    });
+    if (finalResult.length == 0) {
+        finalResult = searchResult;
+    } else {
+        finalResult.sort(function (a, b) {
+            return b[1] - a[1];
+        });
     }
-    response.done();
-    return;
+
+    finalResult = finalResult.map(function (x) {
+        return x[0]
+    });
+
+    return finalResult;
 }
